@@ -1,0 +1,148 @@
+Senin planının “final” düzenlenmiş sürümü (Python + Azure)
+Month 1 — Setup + Base App
+
+Week 1: Requirements + Design
+
+Feature scope: Register/Login, Upload/Download, Admin panel, Logs
+
+DB seçimi: Azure SQL veya PostgreSQL
+
+Diyagramlar: Architecture + ER + Data Flow
+
+Week 2: Azure Environment Setup
+
+Resource Group
+
+Storage Account + private Blob container
+
+Database (Azure SQL / PostgreSQL)
+
+Azure Key Vault
+
+Local dev + Git repo + basic CI (opsiyonel)
+
+Week 3: Backend Skeleton
+
+FastAPI (önerilir) / Flask proje yapısı
+
+Modeller: users, files, access_logs (+ share_links opsiyonel)
+
+API iskeleti ve temel endpointler
+
+Week 4: Authentication v1
+
+Register/Login
+
+Password hashing: argon2 (veya bcrypt)
+
+JWT auth
+
+Roles: User/Admin
+
+✅ Deliverable (End of Month 1): Auth + DB bağlantısı + temel API/UI + Azure kaynakları hazır.
+
+Month 2 — Core Secure Storage Features
+
+Week 5: File Upload
+
+Upload endpoint + frontend form
+
+Metadata: owner, filename, upload_time, blob_path, size, content_type
+
+Week 6: Encryption Module
+
+AES-GCM ile dosya şifreleme
+
+Her dosya için DEK üretimi
+
+DEK’i Key Vault master key ile encrypt (envelope)
+
+Week 7: Blob Integration
+
+Encrypted file upload → Azure Blob
+
+Container private
+
+Secure blob access logic
+
+Week 8: Download + Decryption
+
+Permission check
+
+Blob’dan encrypted download
+
+Decrypt → kullanıcıya stream et
+
+✅ Deliverable (End of Month 2): Upload → encrypt → store → download → decrypt uçtan uca çalışıyor.
+
+Month 3 — Security Hardening + Admin Panel
+
+Week 9: Access Control (RBAC)
+
+Ownership enforcement
+
+Admin: tüm metadata + loglar
+
+Opsiyonel: user-based sharing
+
+Week 10: Logging + Audit
+
+login/upload/download + failed attempts loglama
+
+Admin dashboard: filtreleme + arama
+
+Week 11: Security Enhancements
+
+Rate limiting
+
+File validation (type/size)
+
+Secure error handling
+
+Token expiry / refresh stratejisi
+
+Week 12: Bonus Feature (1–2 tane seç)
+
+TOTP (2FA)
+
+Expiring share links
+
+SHA-256 integrity verification
+
+✅ Deliverable (End of Month 3): Admin panel + audit logs + hardened security + bonus feature.
+
+Month 4 — Testing, Deployment, Documentation
+
+Week 13: Testing
+
+Unit tests: auth/encryption
+
+Security/negative tests: unauthorized access, tampered files
+
+Basic load test (opsiyonel)
+
+Week 14: Deployment
+
+Azure App Service deploy
+
+Secret’ları env yerine Key Vault reference ile yönet
+
+App Service ↔ Key Vault bağlantısı
+
+Week 15: Final Improvements
+
+UI polish
+
+Demo dataset + ekran görüntüleri
+
+README + kurulum adımları
+
+Week 16: Report + Presentation
+
+Final report: problem → tasarım → implementasyon → sonuç
+
+Diyagramlar: architecture / ER / data flow
+
+PPT + demo script
+
+🎯 Final Deliverable: Azure’da çalışan, şifrelemeli güvenli bulut depolama sistemi + RBAC + audit log + dokümantasyon + demo.

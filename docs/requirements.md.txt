@@ -1,0 +1,285 @@
+# Secure Cloud Storage System – Requirements Specification
+
+## 1. Project Overview
+
+The goal of this project is to design and implement a secure cloud storage system that allows users to upload, store, and download files while ensuring data confidentiality and controlled access.
+
+The system will use encryption to protect stored files and implement role-based access control (RBAC) to manage user permissions. All uploaded files will be encrypted before being stored in cloud storage, and access to files will be logged for auditing purposes.
+
+The application will be built using Python with a modern backend framework and deployed on Microsoft Azure.
+
+---
+
+# 2. Objectives
+
+The main objectives of the system are:
+
+* Provide secure file storage in the cloud
+* Ensure confidentiality of stored files through encryption
+* Implement user authentication and authorization
+* Provide administrative oversight through logging and monitoring
+* Demonstrate secure system architecture using cloud infrastructure
+
+---
+
+# 3. System Scope
+
+The system will provide the following capabilities:
+
+### User Features
+
+* User registration
+* User login and authentication
+* Upload files securely
+* Download previously uploaded files
+* Access only files owned by the user
+
+### Admin Features
+
+* View all uploaded file metadata
+* View system access logs
+* Monitor user activity
+* Investigate failed access attempts
+
+---
+
+# 4. Functional Requirements
+
+## 4.1 User Management
+
+The system shall allow users to register and authenticate.
+
+Requirements:
+
+* Users must be able to create an account.
+* Passwords must be securely hashed before storage.
+* Users must be able to log in using their credentials.
+* Authentication will generate a JSON Web Token (JWT).
+* User roles must be supported.
+
+User roles:
+
+* **User** – standard user with access to their own files
+* **Admin** – administrator with access to metadata and logs
+
+---
+
+## 4.2 File Upload
+
+The system shall allow authenticated users to upload files.
+
+Requirements:
+
+* Only authenticated users may upload files.
+* Files must be encrypted before being stored.
+* File metadata must be stored in the database.
+* Uploaded files will be stored in cloud storage.
+
+Metadata stored:
+
+* File ID
+* Owner ID
+* Original filename
+* Upload timestamp
+* File size
+* Content type
+* Blob storage path
+
+---
+
+## 4.3 File Download
+
+The system shall allow users to download their files.
+
+Requirements:
+
+* Only authorized users may download files.
+* The system must verify file ownership.
+* The encrypted file will be retrieved from cloud storage.
+* The file will be decrypted before being returned to the user.
+
+---
+
+## 4.4 File Encryption
+
+The system shall protect stored files using encryption.
+
+Requirements:
+
+* Each uploaded file must be encrypted using AES-GCM.
+* A unique Data Encryption Key (DEK) will be generated for each file.
+* The DEK will be encrypted using a master key (envelope encryption).
+* The master key will be managed using a secure key management system.
+
+---
+
+## 4.5 Logging and Auditing
+
+The system must record key security-related events.
+
+Logged events include:
+
+* User login attempts
+* Successful logins
+* File uploads
+* File downloads
+* Failed access attempts
+
+Each log entry will contain:
+
+* User ID
+* File ID (if applicable)
+* Action type
+* Status (success/failure)
+* Timestamp
+* IP address (if available)
+
+---
+
+# 5. Non-Functional Requirements
+
+## 5.1 Security
+
+The system must follow secure design principles:
+
+* Password hashing using Argon2 or bcrypt
+* JWT-based authentication
+* Encrypted file storage
+* Private cloud storage containers
+* Secure key management
+* Access logging and auditing
+
+---
+
+## 5.2 Performance
+
+The system should:
+
+* Handle typical file upload/download operations efficiently
+* Support concurrent user access
+* Stream files during download when possible
+
+---
+
+## 5.3 Scalability
+
+The system architecture should support scalability through cloud infrastructure such as:
+
+* Managed database services
+* Cloud object storage
+* Containerized or managed application deployment
+
+---
+
+## 5.4 Maintainability
+
+The codebase should follow modular design principles:
+
+* Separation of concerns
+* Organized project structure
+* Clear service and API layers
+
+---
+
+# 6. System Architecture Overview
+
+The system will consist of the following components:
+
+### Client Layer
+
+User interface or API clients interacting with the system.
+
+### Backend Application
+
+Implemented using Python and a web framework (e.g., FastAPI).
+Handles authentication, encryption, file processing, and API endpoints.
+
+### Database
+
+Stores user data, file metadata, and access logs.
+
+### Cloud Storage
+
+Encrypted files will be stored in private cloud storage containers.
+
+### Key Management
+
+Encryption keys will be protected using a secure key management service.
+
+---
+
+# 7. Technology Stack
+
+The planned technology stack includes:
+
+Backend Framework:
+
+* FastAPI
+
+Programming Language:
+
+* Python
+
+Database:
+
+* PostgreSQL
+
+ORM:
+
+* SQLAlchemy
+
+Authentication:
+
+* JWT (JSON Web Tokens)
+
+Password Hashing:
+
+* Argon2
+
+Cloud Platform:
+
+* Microsoft Azure
+
+Cloud Storage:
+
+* Azure Blob Storage
+
+Key Management:
+
+* Azure Key Vault
+
+Deployment:
+
+* Azure App Service
+
+---
+
+# 8. Future Enhancements (Optional)
+
+The following features may be implemented if time permits:
+
+* Two-Factor Authentication (2FA)
+* Secure file sharing via expiring links
+* File integrity verification using SHA-256
+* Advanced monitoring and analytics
+* Continuous Integration / Continuous Deployment (CI/CD)
+
+---
+
+# 9. Deliverables
+
+The final deliverable will include:
+
+* A working secure cloud storage system deployed on Azure
+* Encryption-based file protection
+* Role-based access control
+* Audit logging system
+* Technical documentation
+* Architecture and design diagrams
+* Final report and project presentation
+
+---
+
+# 10. Summary
+
+This project demonstrates the design and implementation of a secure cloud storage system using modern backend technologies and cloud infrastructure. The system emphasizes secure file storage, controlled access, encryption, and auditability, providing a practical implementation of cloud security principles.
