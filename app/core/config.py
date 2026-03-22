@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     AZURE_STORAGE_ACCOUNT: str
     AZURE_CONTAINER_NAME: str
     AZURE_KEY_VAULT_URL: str
+    SECRET_KEY: str
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
