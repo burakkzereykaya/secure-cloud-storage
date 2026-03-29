@@ -8,6 +8,8 @@ class FileUploadResponse(BaseModel):
     blob_path: str
     status: str
     message: str
+    uploaded_at: datetime
+    size: int
 
     model_config = ConfigDict(from_attributes=True)
 
