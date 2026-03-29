@@ -1,5 +1,6 @@
 from sqlalchemy import Column,DateTime,ForeignKey,Integer,String
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
@@ -13,3 +14,6 @@ class AccessLog(Base):
     status = Column(String, nullable=False)
     ip_address = Column(String, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="access_logs")
+    file = relationship("File", back_populates="access_logs")
