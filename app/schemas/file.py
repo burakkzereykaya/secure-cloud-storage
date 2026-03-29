@@ -7,6 +7,7 @@ class FileUploadResponse(BaseModel):
     original_filename: str
     blob_path: str
     status: str
+    message: str
 
     model_config = ConfigDict(from_attributes=True)
 
