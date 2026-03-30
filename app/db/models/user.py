@@ -14,5 +14,5 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    files = relationship("File", back_populates="user")
-    access_logs = relationship("AccessLogs", back_populates="user")
+    files = relationship("File", back_populates="owner")
+    access_logs = relationship("AccessLog", back_populates="user")

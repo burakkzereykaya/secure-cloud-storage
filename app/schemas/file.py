@@ -4,10 +4,10 @@ from datetime import datetime
 
 class FileUploadResponse(BaseModel):
     id: int
-    original_filename: str
-    blob_path: str
-    status: str
-    message: str
+    filename: str
+    # blob_path: str
+    # status: str
+    # message: str
     uploaded_at: datetime
     size: int
 

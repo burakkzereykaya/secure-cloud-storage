@@ -1,12 +1,14 @@
 
 from fastapi import APIRouter,Depends,File as FastAPIFile, UploadFile, HTTPException
-from sqlalchemy.orm import sessionmaker,Session
+from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.models.file import File
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.file import  FileUploadResponse
+
+import uuid
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -16,8 +18,11 @@ MAX_FILE_SIZE = 1024 * 1024 * 5
 #allowed content types
 ALLOWED_TYPES = ["image/png","img/jpeg","application/pdf"]
 
+unique_id = uuid.uuid4()
+
+
 @router.post("/upload",response_model=FileUploadResponse)
-def upload_file(
+async def upload_file(
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -44,11 +49,11 @@ def upload_file(
     content_type = file.content_type
 
     #placeholders for now
-    blob_path = f"uploads/{current_user.id}/{filename}"
-    encrypted_dek = "placeholder_dek"
-    iv_or_nonce = "placeholder_iv"
+    blob_path =f"uploads/{current_user.id}/{unique_id}_{file.filename}"
+    encrypted_dek =b"placeholder_dek"
+    iv_or_nonce =b"placeholder_iv"
 
-    new_file = file(
+    new_file = File(
         owner_id=current_user.id,
         original_filename=filename,
         size=size,
@@ -59,7 +64,7 @@ def upload_file(
         status="uploaded"
     )
 
-    db.add_file(new_file)
+    db.add(new_file)
     db.commit()
     db.refresh(new_file)
 

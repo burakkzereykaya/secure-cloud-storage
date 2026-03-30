@@ -19,4 +19,4 @@ class File(Base):
     status = Column(String,nullable=False,default="uploaded")
 
     owner = relationship("User", back_populates="files")
-    access_logs = relationship("AccessLogs", back_populates="files")
+    access_logs = relationship("AccessLog", back_populates="file")
