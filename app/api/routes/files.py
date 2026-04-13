@@ -10,6 +10,8 @@ from app.schemas.file import  FileUploadResponse
 
 import uuid
 
+from app.services.crypto_service import generate_dek, encrypt_file
+
 router = APIRouter(prefix="/files", tags=["files"])
 
 #max file size (örnek: 5MB)
@@ -48,10 +50,13 @@ async def upload_file(
     size = len(contents)
     content_type = file.content_type
 
+    dek=generate_dek()
+    encrypted_data,iv_or_nonce = encrypt_file(contents,dek)
+
     #placeholders for now
+    unique_id = uuid.uuid4()
     blob_path =f"uploads/{current_user.id}/{unique_id}_{file.filename}"
-    encrypted_dek =b"placeholder_dek"
-    iv_or_nonce =b"placeholder_iv"
+
 
     new_file = File(
         owner_id=current_user.id,
@@ -59,9 +64,9 @@ async def upload_file(
         size=size,
         content_type=content_type,
         blob_path=blob_path,
-        encrypted_dek=encrypted_dek,
+        encrypted_dek=dek, #şu anlik plain dek
         iv_or_nonce=iv_or_nonce,
-        status="uploaded"
+        status="encyrpted"
     )
 
     db.add(new_file)
