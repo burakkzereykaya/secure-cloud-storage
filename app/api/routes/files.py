@@ -11,6 +11,7 @@ from app.schemas.file import  FileUploadResponse
 import uuid
 
 from app.services.crypto_service import generate_dek, encrypt_file
+from app.services.storage_service import upload_encrypted_file
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -18,10 +19,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 MAX_FILE_SIZE = 1024 * 1024 * 5
 
 #allowed content types
-ALLOWED_TYPES = ["image/png","img/jpeg","application/pdf"]
-
-unique_id = uuid.uuid4()
-
+ALLOWED_TYPES = ["image/png","image/jpeg","application/pdf"]
 
 @router.post("/upload",response_model=FileUploadResponse)
 async def upload_file(
@@ -39,7 +37,7 @@ async def upload_file(
     contents= await file.read()
 
     if not contents:
-        raise HTTPException(status_code=400,details="File is empty")
+        raise HTTPException(status_code=400,detail="File is empty")
 
     #size
     if len(contents) > MAX_FILE_SIZE:
@@ -55,8 +53,9 @@ async def upload_file(
 
     #placeholders for now
     unique_id = uuid.uuid4()
-    blob_path =f"uploads/{current_user.id}/{unique_id}_{file.filename}"
+    blob_path =f"uploads/{current_user.id}/{unique_id}.enc"
 
+    upload_encrypted_file(encrypted_data,blob_path)
 
     new_file = File(
         owner_id=current_user.id,
@@ -66,7 +65,7 @@ async def upload_file(
         blob_path=blob_path,
         encrypted_dek=dek, #şu anlik plain dek
         iv_or_nonce=iv_or_nonce,
-        status="encyrpted"
+        status="encrypted"
     )
 
     db.add(new_file)

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     AZURE_STORAGE_ACCOUNT: str
     AZURE_CONTAINER_NAME: str
+    AZURE_STORAGE_CONNECTION_STRING: str
     AZURE_KEY_VAULT_URL: str
     SECRET_KEY: str
 
