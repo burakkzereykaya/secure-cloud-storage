@@ -10,6 +10,7 @@ class FileUploadResponse(BaseModel):
     # message: str
     uploaded_at: datetime
     size: int
+    id: int
 
     model_config = ConfigDict(from_attributes=True)
 
