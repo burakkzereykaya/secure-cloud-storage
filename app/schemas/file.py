@@ -10,7 +10,6 @@ class FileUploadResponse(BaseModel):
     # message: str
     uploaded_at: datetime
     size: int
-    id: int
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -21,7 +20,7 @@ class FileMetadata(BaseModel):
     original_filename: str
     blob_path: str
     size: int
-    content_type: str
+    content_type: str | None
     uploaded_at: datetime
     status: str
 

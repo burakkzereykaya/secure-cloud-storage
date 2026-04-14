@@ -7,12 +7,13 @@ from app.core.dependencies import get_current_user
 from app.db.models.file import File
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.file import  FileUploadResponse
+from app.schemas.file import  FileUploadResponse,FileMetadata
 
 import uuid
 
 from app.services.crypto_service import generate_dek, encrypt_file, decrypt_file
 from app.services.storage_service import upload_encrypted_file, download_encrypted_file
+from app.services.file_access_service import ensure_file_access
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -92,6 +93,8 @@ def download_file(
     if not file_record:
         raise HTTPException(status_code=404,detail="File not found")
 
+    ensure_file_access(file_record,current_user)
+
     if file_record.owner_id != current_user.id:
         raise HTTPException(status_code=403,detail="Not authorized")
 
@@ -118,3 +121,17 @@ def download_file(
 
     except Exception as e:
         raise HTTPException(status_code=500,detail=f"Download failed: {str(e)}")
+
+
+@router.get("/my-files", response_model=list[FileMetadata])
+def list_my_files(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+):
+    files = (
+        db.query(File)
+        .filter(File.owner_id == current_user.id)
+        .order_by(File.id.desc())
+        .all()
+    )
+    return files
