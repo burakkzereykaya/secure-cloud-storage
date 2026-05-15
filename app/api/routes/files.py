@@ -9,6 +9,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.file import  FileUploadResponse,FileMetadata
 
+
 import uuid
 
 from app.services.crypto_service import generate_dek, encrypt_file, decrypt_file
@@ -135,3 +136,18 @@ def list_my_files(
         .all()
     )
     return files
+
+@router.get("/my-files/{file_id}", response_model=FileMetadata)
+def get_file_detail(
+        file_id: int,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+):
+    file_record = db.query(File).filter(File.id == file_id).first()
+
+    if not file_record:
+        raise HTTPException(status_code=404,detail="File not found")
+
+    ensure_file_access(file_record,current_user)
+
+    return file_record
