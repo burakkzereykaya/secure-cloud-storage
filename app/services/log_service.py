@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from app.db.models.access_log import AccessLog
 
 
-def log_event(
+def create_log(
     db: Session,
-    user_id: int,
-    file_id: int,
-    action: str,
-    status: str,
+    user_id: int | None = None,
+    file_id: int | None = None,
+    action: str = "UNKNOWN",
+    status: str = "UNKNOWN",
     ip_address: str | None = None,
+    details: str | None = None,
 ) -> AccessLog:
     log = AccessLog(
         user_id=user_id,
@@ -17,6 +18,7 @@ def log_event(
         action=action,
         status=status,
         ip_address=ip_address,
+        details=details,
     )
     db.add(log)
     db.commit()

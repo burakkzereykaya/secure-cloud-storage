@@ -1,9 +1,10 @@
 
-from fastapi import APIRouter,Depends,File as FastAPIFile, UploadFile, HTTPException
+from fastapi import APIRouter,Depends,File as FastAPIFile, UploadFile, HTTPException,Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
+from app.services.log_service import create_log
 from app.db.models.file import File
 from app.db.models.user import User
 from app.db.session import get_db
@@ -26,6 +27,7 @@ ALLOWED_TYPES = ["image/png","image/jpeg","application/pdf"]
 
 @router.post("/upload",response_model=FileUploadResponse)
 async def upload_file(
+    request: Request,
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -75,6 +77,17 @@ async def upload_file(
     db.commit()
     db.refresh(new_file)
 
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=new_file.id,
+        action="UPLOAD_SUCCESS",
+        status="success",
+        ip_address=request.client.host if request.client else None,
+        details=f"Uploaded file: {new_file.original_filename}",
+    )
+
+
     return FileUploadResponse(
         id=new_file.id,
         filename=file.filename,
@@ -85,6 +98,7 @@ async def upload_file(
 
 @router.get("/{file_id}/download")
 def download_file(
+        request: Request,
         file_id: int,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
@@ -92,9 +106,30 @@ def download_file(
     file_record = db.query(File).filter(File.id == file_id).first()
 
     if not file_record:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_id,
+            action="DOWNLOAD_FAILED",
+            status="failed",
+            ip_address=request.client.host if request.client else None,
+            details=f"File not found during download attempt",
+        )
         raise HTTPException(status_code=404,detail="File not found")
 
-    ensure_file_access(file_record,current_user)
+    try:
+        ensure_file_access(file_record,current_user)
+    except HTTPException:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_record.id,
+            action="UNAUTHORIZED_ACCESS",
+            status="forbidden",
+            ip_address=request.client.host if request.client else None,
+            details="User attempted to download a file owned by another user",
+        )
+        raise
 
     if file_record.owner_id != current_user.id:
         raise HTTPException(status_code=403,detail="Not authorized")
@@ -111,6 +146,17 @@ def download_file(
             dek,
             nonce,
         )
+
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_record.id,
+            action="DOWNLOAD_SUCCESS",
+            status="success",
+            ip_address=request.client.host if request.client else None,
+            details=f"Downloaded file: {file_record.original_filename}",
+        )
+
 
         return Response(
             content=decrypted_data,
@@ -137,8 +183,9 @@ def list_my_files(
     )
     return files
 
-@router.get("/my-files/{file_id}", response_model=FileMetadata)
+@router.get("/{file_id}", response_model=FileMetadata)
 def get_file_detail(
+        request: Request,
         file_id: int,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
@@ -146,8 +193,37 @@ def get_file_detail(
     file_record = db.query(File).filter(File.id == file_id).first()
 
     if not file_record:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_id,
+            action="METADATA_VIEW_FAILED",
+            status="failed",
+            ip_address=request.client.host if request.client else None,
+            details="File metadata requested but file was not found",
+        )
         raise HTTPException(status_code=404,detail="File not found")
-
-    ensure_file_access(file_record,current_user)
+    try:
+        ensure_file_access(file_record,current_user)
+    except HTTPException:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_record.id,
+            action="UNAUTHORIZED_ACCESS",
+            status="forbidden",
+            ip_address=request.client.host if request.client else None,
+            details="User attempted to view metadata of another user's file",
+        )
+        raise
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=file_record.id,
+        action="METADATA_VIEWED",
+        status="success",
+        ip_address=request.client.host if request.client else None,
+        details=f"Viewed metadata for file: {file_record.original_filename}",
+    )
 
     return file_record
