@@ -50,8 +50,8 @@ def login_user(db: Session, email: str,password: str) -> dict:
         )
     if not user.is_active:
         raise HTTPException(
-            status_code=403,
-            detail="User is inactive",
+            status_code=401,
+            detail="Invalid email or password",
         )
     access_token = create_access_token(
         {

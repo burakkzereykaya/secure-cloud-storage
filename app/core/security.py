@@ -11,7 +11,12 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-print("SECRET KEY",SECRET_KEY)
+class TokenExpiredError(Exception):
+    pass
+
+
+class TokenInvalidError(Exception):
+    pass
 
 def hash_password(password:str) -> str:
     return pwd_context.hash(password)
@@ -27,9 +32,11 @@ def create_access_token(data:dict) -> str:
 
     return jwt.encode(to_encode,SECRET_KEY,algorithm=ALGORITHM)
 
-def decode_access_token(token: str) -> dict | None:
+def decode_access_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
+    except ExpiredSignatureError:
+        raise TokenExpiredError
     except JWTError:
-        return None
+        raise TokenInvalidError

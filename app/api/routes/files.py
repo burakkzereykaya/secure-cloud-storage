@@ -4,6 +4,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import limiter
 from app.services.log_service import create_log
 from app.db.models.file import File
 from app.db.models.user import User
@@ -12,6 +13,7 @@ from app.schemas.file import  FileUploadResponse,FileMetadata
 
 
 import uuid
+from urllib.parse import quote
 
 from app.services.crypto_service import generate_dek, encrypt_file, decrypt_file
 from app.services.storage_service import upload_encrypted_file, download_encrypted_file
@@ -20,12 +22,13 @@ from app.services.file_access_service import ensure_file_access
 router = APIRouter(prefix="/files", tags=["files"])
 
 #max file size (örnek: 5MB)
-MAX_FILE_SIZE = 1024 * 1024 * 5
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 #allowed content types
-ALLOWED_TYPES = ["image/png","image/jpeg","application/pdf"]
+ALLOWED_TYPES = {"image/png", "image/jpeg", "application/pdf", "text/plain"}
 
 @router.post("/upload",response_model=FileUploadResponse)
+@limiter.limit("10/minute")
 async def upload_file(
     request: Request,
     file: UploadFile = FastAPIFile(...),
@@ -36,17 +39,33 @@ async def upload_file(
         raise HTTPException(status_code=400,detail="File name is required")
 
     if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400,detail=f"File type is not supported {file.content_type}")
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            action="INVALID_FILE_TYPE",
+            status="failure",
+            ip_address=request.client.host if request.client else None,
+            details=f"Rejected upload with content type: {file.content_type}",
+        )
+        raise HTTPException(status_code=400,detail="Invalid file type")
 
     #read
-    contents= await file.read()
+    contents = await file.read(MAX_FILE_SIZE + 1)
 
     if not contents:
         raise HTTPException(status_code=400,detail="File is empty")
 
     #size
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400,detail="File is too big to upload")
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            action="FILE_TOO_LARGE",
+            status="failure",
+            ip_address=request.client.host if request.client else None,
+            details=f"Rejected upload larger than {MAX_FILE_SIZE} bytes",
+        )
+        raise HTTPException(status_code=413,detail="Payload too large")
 
     #METADATA
     filename = file.filename
@@ -56,9 +75,8 @@ async def upload_file(
     dek=generate_dek()
     encrypted_data,iv_or_nonce = encrypt_file(contents,dek)
 
-    #placeholders for now
-    unique_id = uuid.uuid4()
-    blob_path =f"uploads/{current_user.id}/{unique_id}.enc"
+    uuid_filename = f"{uuid.uuid4()}.enc"
+    blob_path = f"uploads/{current_user.id}/{uuid_filename}"
 
     upload_encrypted_file(encrypted_data,blob_path)
 
@@ -97,6 +115,7 @@ async def upload_file(
     )
 
 @router.get("/{file_id}/download")
+@limiter.limit("20/minute")
 def download_file(
         request: Request,
         file_id: int,
@@ -158,16 +177,27 @@ def download_file(
         )
 
 
+        safe_download_name = quote(file_record.original_filename or "download", safe="")
+
         return Response(
             content=decrypted_data,
             media_type=file_record.content_type or "application/octet-stream",
             headers={
-                "Content-Disposition": f'attachment; filename="{file_record.original_filename}"'
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_download_name}"
             },
         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500,detail=f"Download failed: {str(e)}")
+    except Exception:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            file_id=file_record.id,
+            action="DOWNLOAD_FAILED",
+            status="failure",
+            ip_address=request.client.host if request.client else None,
+            details="Unexpected error during file download",
+        )
+        raise HTTPException(status_code=500,detail="An unexpected error occurred")
 
 
 @router.get("/my-files", response_model=list[FileMetadata])

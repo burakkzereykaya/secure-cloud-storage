@@ -18,4 +18,3 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
-print("Settings loaded OK")

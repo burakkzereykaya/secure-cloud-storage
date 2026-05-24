@@ -12,6 +12,10 @@ __pycache__/
 
 # Virtual env
 .venv/
+venv/
+
+# Local uploaded/encrypted files
+uploads/
 
 
 # IDE

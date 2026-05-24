@@ -7,6 +7,7 @@ from app.schemas.auth import TokenResponse,LoginRequest
 from app.schemas.user import UserCreate,UserResponse
 from app.services.auth_service import login_user,register_user
 from app.services.log_service import create_log
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -22,6 +23,7 @@ def register(user:UserCreate,db:Session = Depends(get_db)):
 
 
 @router.post("/login",response_model=TokenResponse)
+@limiter.limit("5/minute")
 def login(request: Request,user:LoginRequest,db:Session = Depends(get_db)):
 
     ip_address=request.client.host if request.client else None
