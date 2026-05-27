@@ -10,6 +10,7 @@ def upload_file(
     blob_path: str,
     size: int,
     content_type: str,
+    sha256_hash: str,
     encrypted_dek: bytes,
     iv_or_nonce: bytes,
 ) -> File:
@@ -19,6 +20,7 @@ def upload_file(
         blob_path=blob_path,
         size=size,
         content_type=content_type,
+        sha256_hash=sha256_hash,
         encrypted_dek=encrypted_dek,
         iv_or_nonce=iv_or_nonce,
         status="uploaded",

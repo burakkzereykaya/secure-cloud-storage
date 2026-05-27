@@ -1,33 +1,128 @@
+from datetime import datetime, timedelta, timezone
+import secrets
+import uuid
+from urllib.parse import quote
 
-from fastapi import APIRouter,Depends,File as FastAPIFile, UploadFile, HTTPException,Request
+from fastapi import APIRouter, Depends, File as FastAPIFile, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
-from app.services.log_service import create_log
 from app.db.models.file import File
+from app.db.models.file_permission import FilePermission
+from app.db.models.share_link import ShareLink
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.file import  FileUploadResponse,FileMetadata
-
-
-import uuid
-from urllib.parse import quote
-
-from app.services.crypto_service import generate_dek, encrypt_file, decrypt_file
-from app.services.storage_service import upload_encrypted_file, download_encrypted_file
-from app.services.file_access_service import ensure_file_access
+from app.schemas.file import (
+    FileMetadata,
+    FileShareResponse,
+    FileUploadResponse,
+    ShareFileRequest,
+    ShareLinkCreateRequest,
+    ShareLinkResponse,
+)
+from app.services.crypto_service import decrypt_file, encrypt_file, generate_dek
+from app.services.file_access_service import ensure_file_access, ensure_file_owner_or_admin
+from app.services.hash_service import calculate_sha256
+from app.services.log_service import create_log
+from app.services.storage_service import download_encrypted_file, upload_encrypted_file
 
 router = APIRouter(prefix="/files", tags=["files"])
+share_router = APIRouter(prefix="/share", tags=["share-links"])
 
-#max file size (örnek: 5MB)
+# max file size: 10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
-#allowed content types
+# allowed content types
 ALLOWED_TYPES = {"image/png", "image/jpeg", "application/pdf", "text/plain"}
+SUPPORTED_PERMISSION_TYPES = {"read"}
 
-@router.post("/upload",response_model=FileUploadResponse)
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def _is_expired(expires_at: datetime) -> bool:
+    now = datetime.now(timezone.utc)
+    if expires_at.tzinfo is None:
+        now = now.replace(tzinfo=None)
+    return expires_at <= now
+
+
+def _download_response(file_record: File, decrypted_data: bytes) -> Response:
+    safe_download_name = quote(file_record.original_filename or "download", safe="")
+    return Response(
+        content=decrypted_data,
+        media_type=file_record.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_download_name}"
+        },
+    )
+
+
+def _decrypt_and_verify_file(
+    db: Session,
+    request: Request,
+    file_record: File,
+    user_id: int | None,
+) -> bytes:
+    if not file_record.sha256_hash:
+        create_log(
+            db=db,
+            user_id=user_id,
+            file_id=file_record.id,
+            action="INTEGRITY_CHECK_FAILED",
+            status="failure",
+            ip_address=_client_ip(request),
+            details="File integrity hash is missing",
+        )
+        raise HTTPException(status_code=409, detail="INTEGRITY_CHECK_FAILED")
+
+    try:
+        encrypted_data = download_encrypted_file(file_record.blob_path)
+        decrypted_data = decrypt_file(
+            encrypted_data,
+            bytes(file_record.encrypted_dek),
+            bytes(file_record.iv_or_nonce),
+        )
+    except Exception:
+        create_log(
+            db=db,
+            user_id=user_id,
+            file_id=file_record.id,
+            action="INTEGRITY_CHECK_FAILED",
+            status="failure",
+            ip_address=_client_ip(request),
+            details="Encrypted blob could not be decrypted or verified",
+        )
+        raise HTTPException(status_code=409, detail="INTEGRITY_CHECK_FAILED")
+
+    if calculate_sha256(decrypted_data) != file_record.sha256_hash:
+        create_log(
+            db=db,
+            user_id=user_id,
+            file_id=file_record.id,
+            action="INTEGRITY_CHECK_FAILED",
+            status="failure",
+            ip_address=_client_ip(request),
+            details="Decrypted file hash does not match stored hash",
+        )
+        raise HTTPException(status_code=409, detail="INTEGRITY_CHECK_FAILED")
+
+    create_log(
+        db=db,
+        user_id=user_id,
+        file_id=file_record.id,
+        action="INTEGRITY_CHECK_SUCCESS",
+        status="success",
+        ip_address=_client_ip(request),
+        details="Decrypted file hash matches stored hash",
+    )
+    return decrypted_data
+
+
+@router.post("/upload", response_model=FileUploadResponse)
 @limiter.limit("10/minute")
 async def upload_file(
     request: Request,
@@ -36,7 +131,7 @@ async def upload_file(
     current_user: User = Depends(get_current_user),
 ):
     if not file.filename:
-        raise HTTPException(status_code=400,detail="File name is required")
+        raise HTTPException(status_code=400, detail="File name is required")
 
     if file.content_type not in ALLOWED_TYPES:
         create_log(
@@ -44,51 +139,50 @@ async def upload_file(
             user_id=current_user.id,
             action="INVALID_FILE_TYPE",
             status="failure",
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             details=f"Rejected upload with content type: {file.content_type}",
         )
-        raise HTTPException(status_code=400,detail="Invalid file type")
+        raise HTTPException(status_code=400, detail="Invalid file type")
 
-    #read
     contents = await file.read(MAX_FILE_SIZE + 1)
 
     if not contents:
-        raise HTTPException(status_code=400,detail="File is empty")
+        raise HTTPException(status_code=400, detail="File is empty")
 
-    #size
     if len(contents) > MAX_FILE_SIZE:
         create_log(
             db=db,
             user_id=current_user.id,
             action="FILE_TOO_LARGE",
             status="failure",
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             details=f"Rejected upload larger than {MAX_FILE_SIZE} bytes",
         )
-        raise HTTPException(status_code=413,detail="Payload too large")
+        raise HTTPException(status_code=413, detail="Payload too large")
 
-    #METADATA
     filename = file.filename
     size = len(contents)
     content_type = file.content_type
+    sha256_hash = calculate_sha256(contents)
 
-    dek=generate_dek()
-    encrypted_data,iv_or_nonce = encrypt_file(contents,dek)
+    dek = generate_dek()
+    encrypted_data, iv_or_nonce = encrypt_file(contents, dek)
 
     uuid_filename = f"{uuid.uuid4()}.enc"
     blob_path = f"uploads/{current_user.id}/{uuid_filename}"
 
-    upload_encrypted_file(encrypted_data,blob_path)
+    upload_encrypted_file(encrypted_data, blob_path)
 
     new_file = File(
         owner_id=current_user.id,
         original_filename=filename,
         size=size,
         content_type=content_type,
+        sha256_hash=sha256_hash,
         blob_path=blob_path,
-        encrypted_dek=dek, #şu anlik plain dek
+        encrypted_dek=dek,
         iv_or_nonce=iv_or_nonce,
-        status="encrypted"
+        status="encrypted",
     )
 
     db.add(new_file)
@@ -101,26 +195,196 @@ async def upload_file(
         file_id=new_file.id,
         action="UPLOAD_SUCCESS",
         status="success",
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         details=f"Uploaded file: {new_file.original_filename}",
     )
-
 
     return FileUploadResponse(
         id=new_file.id,
         filename=file.filename,
         size=new_file.size,
         uploaded_at=new_file.uploaded_at,
-        message=f"Authenticated upload request accepted for user {current_user.email}"
+        message=f"Authenticated upload request accepted for user {current_user.email}",
     )
+
+
+@router.get("/my-files", response_model=list[FileMetadata])
+def list_my_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(File)
+        .filter(File.owner_id == current_user.id)
+        .order_by(File.id.desc())
+        .all()
+    )
+
+
+@router.get("/shared-with-me", response_model=list[FileMetadata])
+def list_shared_with_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(File)
+        .join(FilePermission, FilePermission.file_id == File.id)
+        .filter(
+            FilePermission.shared_with_user_id == current_user.id,
+            FilePermission.is_active.is_(True),
+        )
+        .order_by(FilePermission.id.desc())
+        .all()
+    )
+
+
+@router.post("/{file_id}/share", response_model=FileShareResponse)
+def share_file(
+    request: Request,
+    file_id: int,
+    payload: ShareFileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if payload.permission_type not in SUPPORTED_PERMISSION_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported permission type")
+
+    file_record = db.query(File).filter(File.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ensure_file_owner_or_admin(file_record, current_user)
+
+    shared_user = db.query(User).filter(User.email == payload.shared_with_email).first()
+    if not shared_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if shared_user.id == file_record.owner_id:
+        raise HTTPException(status_code=400, detail="File owner already has access")
+
+    existing_permission = (
+        db.query(FilePermission)
+        .filter(
+            FilePermission.file_id == file_record.id,
+            FilePermission.shared_with_user_id == shared_user.id,
+            FilePermission.is_active.is_(True),
+        )
+        .first()
+    )
+    if existing_permission:
+        raise HTTPException(status_code=400, detail="File is already shared with this user")
+
+    permission = FilePermission(
+        file_id=file_record.id,
+        owner_id=file_record.owner_id,
+        shared_with_user_id=shared_user.id,
+        permission_type=payload.permission_type,
+        is_active=True,
+    )
+    db.add(permission)
+    db.commit()
+    db.refresh(permission)
+
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=file_record.id,
+        action="FILE_SHARED",
+        status="success",
+        ip_address=_client_ip(request),
+        details=f"Shared file with user_id={shared_user.id}",
+    )
+
+    return permission
+
+
+@router.delete("/{file_id}/share/{user_id}")
+def revoke_file_share(
+    request: Request,
+    file_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    file_record = db.query(File).filter(File.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ensure_file_owner_or_admin(file_record, current_user)
+
+    permission = (
+        db.query(FilePermission)
+        .filter(
+            FilePermission.file_id == file_record.id,
+            FilePermission.shared_with_user_id == user_id,
+            FilePermission.is_active.is_(True),
+        )
+        .first()
+    )
+    if not permission:
+        raise HTTPException(status_code=404, detail="Active file share not found")
+
+    permission.is_active = False
+    db.commit()
+
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=file_record.id,
+        action="FILE_SHARE_REVOKED",
+        status="success",
+        ip_address=_client_ip(request),
+        details=f"Revoked file share for user_id={user_id}",
+    )
+
+    return {"message": "File share revoked"}
+
+
+@router.post("/{file_id}/share-link", response_model=ShareLinkResponse)
+def create_share_link(
+    request: Request,
+    file_id: int,
+    payload: ShareLinkCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    file_record = db.query(File).filter(File.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ensure_file_owner_or_admin(file_record, current_user)
+
+    share_link = ShareLink(
+        file_id=file_record.id,
+        created_by_user_id=current_user.id,
+        token=secrets.token_urlsafe(32),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=payload.expires_in_minutes),
+        is_active=True,
+    )
+    db.add(share_link)
+    db.commit()
+    db.refresh(share_link)
+
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=file_record.id,
+        action="SHARE_LINK_CREATED",
+        status="success",
+        ip_address=_client_ip(request),
+        details=f"Created expiring download link id={share_link.id}",
+    )
+
+    return share_link
+
 
 @router.get("/{file_id}/download")
 @limiter.limit("20/minute")
 def download_file(
-        request: Request,
-        file_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     file_record = db.query(File).filter(File.id == file_id).first()
 
@@ -131,13 +395,13 @@ def download_file(
             file_id=file_id,
             action="DOWNLOAD_FAILED",
             status="failed",
-            ip_address=request.client.host if request.client else None,
-            details=f"File not found during download attempt",
+            ip_address=_client_ip(request),
+            details="File not found during download attempt",
         )
-        raise HTTPException(status_code=404,detail="File not found")
+        raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        ensure_file_access(file_record,current_user)
+        ensure_file_access(file_record, current_user, db)
     except HTTPException:
         create_log(
             db=db,
@@ -145,80 +409,32 @@ def download_file(
             file_id=file_record.id,
             action="UNAUTHORIZED_ACCESS",
             status="forbidden",
-            ip_address=request.client.host if request.client else None,
-            details="User attempted to download a file owned by another user",
+            ip_address=_client_ip(request),
+            details="User attempted to download a file without access",
         )
         raise
 
-    if file_record.owner_id != current_user.id:
-        raise HTTPException(status_code=403,detail="Not authorized")
+    decrypted_data = _decrypt_and_verify_file(db, request, file_record, current_user.id)
 
-    try:
-        encrypted_data = download_encrypted_file(file_record.blob_path)
-
-        dek = bytes(file_record.encrypted_dek)
-        nonce = bytes(file_record.iv_or_nonce)
-
-
-        decrypted_data = decrypt_file(
-            encrypted_data,
-            dek,
-            nonce,
-        )
-
-        create_log(
-            db=db,
-            user_id=current_user.id,
-            file_id=file_record.id,
-            action="DOWNLOAD_SUCCESS",
-            status="success",
-            ip_address=request.client.host if request.client else None,
-            details=f"Downloaded file: {file_record.original_filename}",
-        )
-
-
-        safe_download_name = quote(file_record.original_filename or "download", safe="")
-
-        return Response(
-            content=decrypted_data,
-            media_type=file_record.content_type or "application/octet-stream",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_download_name}"
-            },
-        )
-
-    except Exception:
-        create_log(
-            db=db,
-            user_id=current_user.id,
-            file_id=file_record.id,
-            action="DOWNLOAD_FAILED",
-            status="failure",
-            ip_address=request.client.host if request.client else None,
-            details="Unexpected error during file download",
-        )
-        raise HTTPException(status_code=500,detail="An unexpected error occurred")
-
-
-@router.get("/my-files", response_model=list[FileMetadata])
-def list_my_files(
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-):
-    files = (
-        db.query(File)
-        .filter(File.owner_id == current_user.id)
-        .order_by(File.id.desc())
-        .all()
+    create_log(
+        db=db,
+        user_id=current_user.id,
+        file_id=file_record.id,
+        action="DOWNLOAD_SUCCESS",
+        status="success",
+        ip_address=_client_ip(request),
+        details=f"Downloaded file: {file_record.original_filename}",
     )
-    return files
+
+    return _download_response(file_record, decrypted_data)
+
 
 @router.get("/{file_id}", response_model=FileMetadata)
 def get_file_detail(
-        request: Request,
-        file_id: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
+    request: Request,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     file_record = db.query(File).filter(File.id == file_id).first()
 
@@ -229,12 +445,13 @@ def get_file_detail(
             file_id=file_id,
             action="METADATA_VIEW_FAILED",
             status="failed",
-            ip_address=request.client.host if request.client else None,
+            ip_address=_client_ip(request),
             details="File metadata requested but file was not found",
         )
-        raise HTTPException(status_code=404,detail="File not found")
+        raise HTTPException(status_code=404, detail="File not found")
+
     try:
-        ensure_file_access(file_record,current_user)
+        ensure_file_access(file_record, current_user, db)
     except HTTPException:
         create_log(
             db=db,
@@ -242,18 +459,70 @@ def get_file_detail(
             file_id=file_record.id,
             action="UNAUTHORIZED_ACCESS",
             status="forbidden",
-            ip_address=request.client.host if request.client else None,
-            details="User attempted to view metadata of another user's file",
+            ip_address=_client_ip(request),
+            details="User attempted to view metadata for a file without access",
         )
         raise
+
     create_log(
         db=db,
         user_id=current_user.id,
         file_id=file_record.id,
         action="METADATA_VIEWED",
         status="success",
-        ip_address=request.client.host if request.client else None,
+        ip_address=_client_ip(request),
         details=f"Viewed metadata for file: {file_record.original_filename}",
     )
 
     return file_record
+
+
+@share_router.get("/{token}/download")
+def download_file_with_share_link(
+    request: Request,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    share_link = db.query(ShareLink).filter(ShareLink.token == token).first()
+    if not share_link:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    if not share_link.is_active:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    if _is_expired(share_link.expires_at):
+        share_link.is_active = False
+        db.commit()
+        create_log(
+            db=db,
+            user_id=share_link.created_by_user_id,
+            file_id=share_link.file_id,
+            action="SHARE_LINK_EXPIRED",
+            status="failure",
+            ip_address=_client_ip(request),
+            details=f"Expired share link id={share_link.id} was used",
+        )
+        raise HTTPException(status_code=410, detail="Share link expired")
+
+    file_record = db.query(File).filter(File.id == share_link.file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    decrypted_data = _decrypt_and_verify_file(
+        db,
+        request,
+        file_record,
+        share_link.created_by_user_id,
+    )
+
+    create_log(
+        db=db,
+        user_id=share_link.created_by_user_id,
+        file_id=file_record.id,
+        action="SHARE_LINK_USED",
+        status="success",
+        ip_address=_client_ip(request),
+        details=f"Share link id={share_link.id} used",
+    )
+
+    return _download_response(file_record, decrypted_data)

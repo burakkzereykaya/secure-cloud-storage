@@ -16,3 +16,14 @@ class User(Base):
 
     files = relationship("File", back_populates="owner")
     access_logs = relationship("AccessLog", back_populates="user")
+    owned_file_permissions = relationship(
+        "FilePermission",
+        foreign_keys="FilePermission.owner_id",
+        back_populates="owner",
+    )
+    shared_file_permissions = relationship(
+        "FilePermission",
+        foreign_keys="FilePermission.shared_with_user_id",
+        back_populates="shared_with_user",
+    )
+    created_share_links = relationship("ShareLink", back_populates="created_by_user")

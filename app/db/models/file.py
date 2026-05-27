@@ -13,6 +13,7 @@ class File(Base):
     blob_path = Column(String,nullable=False,unique=True)
     size = Column(Integer,nullable=False)
     content_type = Column(String,nullable=False)
+    sha256_hash = Column(String(64),nullable=True)
     encrypted_dek = Column(LargeBinary,nullable=False)
     iv_or_nonce = Column(LargeBinary,nullable=False)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=False)
@@ -20,3 +21,5 @@ class File(Base):
 
     owner = relationship("User", back_populates="files")
     access_logs = relationship("AccessLog", back_populates="file")
+    permissions = relationship("FilePermission", back_populates="file")
+    share_links = relationship("ShareLink", back_populates="file")
