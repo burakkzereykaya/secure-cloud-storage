@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.api.routes.admin import router as admin_router
@@ -12,6 +16,8 @@ from app.db.base import Base
 from app.db.session import engine
 from app.db.models import User,File,AccessLog,FilePermission,ShareLink
 from app.db.schema_migrations import ensure_sha256_hash_column
+
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 
 app = FastAPI(title="Secure Cloud Storage API")
 app.state.limiter = limiter
@@ -26,7 +32,17 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
+
+
+@app.middleware("http")
+async def add_no_cache_for_frontend(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/frontend/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 Base.metadata.create_all(bind=engine)
 ensure_sha256_hash_column(engine)
@@ -37,8 +53,18 @@ app.include_router(share_router)
 app.include_router(admin_router)
 app.include_router(users_router)
 
+if FRONTEND_DIR.exists():
+    app.mount(
+        "/frontend",
+        StaticFiles(directory=FRONTEND_DIR),
+        name="frontend",
+    )
+
+
 @app.get("/")
 def root():
+    if FRONTEND_DIR.exists():
+        return FileResponse(FRONTEND_DIR / "index.html")
     return {"message": "API is running"}
 
 
