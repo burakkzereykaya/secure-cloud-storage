@@ -171,7 +171,18 @@ async def upload_file(
     uuid_filename = f"{uuid.uuid4()}.enc"
     blob_path = f"uploads/{current_user.id}/{uuid_filename}"
 
-    upload_encrypted_file(encrypted_data, blob_path)
+    try:
+        upload_encrypted_file(encrypted_data, blob_path)
+    except Exception:
+        create_log(
+            db=db,
+            user_id=current_user.id,
+            action="UPLOAD_FAILED",
+            status="failure",
+            ip_address=_client_ip(request),
+            details="Azure Blob upload failed",
+        )
+        raise HTTPException(status_code=502, detail="Azure Blob upload failed")
 
     new_file = File(
         owner_id=current_user.id,
