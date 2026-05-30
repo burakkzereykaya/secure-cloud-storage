@@ -1,5 +1,5 @@
 from fastapi import Depends,HTTPException,status,Request
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import TokenExpiredError, TokenInvalidError, decode_access_token
@@ -7,13 +7,15 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.services.log_service import create_log
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+bearer_scheme = HTTPBearer(scheme_name="BearerAuth")
 
 def get_current_user(
     request: Request,
-    token: str = Depends(oauth2_scheme),
+    token: str | HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    access_token = token.credentials if isinstance(token, HTTPAuthorizationCredentials) else token
+
     # Invalid token
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -28,7 +30,7 @@ def get_current_user(
     )
 
     try:
-        payload = decode_access_token(token)
+        payload = decode_access_token(access_token)
     except TokenExpiredError:
         create_log(
             db=db,
