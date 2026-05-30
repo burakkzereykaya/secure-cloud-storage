@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 import secrets
 import uuid
 from urllib.parse import quote
@@ -30,6 +31,7 @@ from app.services.storage_service import download_encrypted_file, upload_encrypt
 
 router = APIRouter(prefix="/files", tags=["files"])
 share_router = APIRouter(prefix="/share", tags=["share-links"])
+logger = logging.getLogger(__name__)
 
 # max file size: 10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -174,6 +176,7 @@ async def upload_file(
     try:
         upload_encrypted_file(encrypted_data, blob_path)
     except Exception:
+        logger.exception("Azure Blob upload failed for blob_path=%s", blob_path)
         create_log(
             db=db,
             user_id=current_user.id,
