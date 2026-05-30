@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: secure-cloud-service-f5fdgremc5b9bvfe
+  AZURE_WEBAPP_NAME: secure-cloud-service
   AZURE_WEBAPP_PACKAGE_PATH: "."
   PYTHON_VERSION: "3.11"
 
