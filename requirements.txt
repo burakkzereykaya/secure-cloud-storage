@@ -25,4 +25,5 @@ python-jose~=3.5.0
 cryptography~=46.0.6
 requests~=2.33.1
 azure-core~=1.39.0
+azure-storage-blob~=12.27.1
 slowapi~=0.1.9

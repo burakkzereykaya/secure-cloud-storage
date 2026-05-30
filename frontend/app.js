@@ -1,7 +1,13 @@
 const app = document.querySelector("#app");
 
+const localApiBase = localStorage.getItem("scs_api_base");
+const configuredApiBase = window.SCS_API_BASE || "";
+const defaultApiBase = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://127.0.0.1:8000"
+  : window.location.origin;
+
 const state = {
-  apiBase: localStorage.getItem("scs_api_base") || "http://127.0.0.1:8000",
+  apiBase: (localApiBase || configuredApiBase || defaultApiBase).replace(/\/+$/, ""),
   token: localStorage.getItem("scs_token") || "",
   user: null,
   authMode: "login",
