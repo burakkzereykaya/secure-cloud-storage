@@ -33,6 +33,10 @@ class ShareFileRequest(BaseModel):
     permission_type: str = "read"
 
 
+class RevokeShareRequest(BaseModel):
+    shared_with_email: EmailStr
+
+
 class FileShareResponse(BaseModel):
     id: int
     file_id: int

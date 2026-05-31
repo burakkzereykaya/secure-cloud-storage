@@ -28,7 +28,7 @@ from app.db.models.file import File
 from app.db.models.share_link import ShareLink
 from app.db.models.user import User
 from app.db.session import SessionLocal, engine
-from app.schemas.file import ShareFileRequest, ShareLinkCreateRequest
+from app.schemas.file import RevokeShareRequest, ShareFileRequest, ShareLinkCreateRequest
 from app.services.auth_service import login_user, register_user
 from app.services.crypto_service import decrypt_file
 from app.services.hash_service import calculate_sha256
@@ -230,10 +230,10 @@ class Week13SmokeTests(unittest.TestCase):
         response = file_routes.download_file(self.request, file_record.id, self.db, shared_user)
         self.assertEqual(response.body, b"hello secure world")
 
-        result = file_routes.revoke_file_share(
+        result = file_routes.revoke_file_share_by_email(
             self.request,
             file_record.id,
-            shared_user.id,
+            RevokeShareRequest(shared_with_email=shared_user.email),
             self.db,
             owner,
         )

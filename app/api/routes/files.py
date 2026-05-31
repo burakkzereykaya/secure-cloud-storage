@@ -19,6 +19,7 @@ from app.schemas.file import (
     FileMetadata,
     FileShareResponse,
     FileUploadResponse,
+    RevokeShareRequest,
     ShareFileRequest,
     ShareLinkCreateRequest,
     ShareLinkResponse,
@@ -312,25 +313,18 @@ def share_file(
     return permission
 
 
-@router.delete("/{file_id}/share/{user_id}")
-def revoke_file_share(
+def _revoke_file_share_for_user(
     request: Request,
-    file_id: int,
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    file_record: File,
+    shared_with_user_id: int,
+    db: Session,
+    current_user: User,
 ):
-    file_record = db.query(File).filter(File.id == file_id).first()
-    if not file_record:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    ensure_file_owner_or_admin(file_record, current_user)
-
     permission = (
         db.query(FilePermission)
         .filter(
             FilePermission.file_id == file_record.id,
-            FilePermission.shared_with_user_id == user_id,
+            FilePermission.shared_with_user_id == shared_with_user_id,
             FilePermission.is_active.is_(True),
         )
         .first()
@@ -348,10 +342,60 @@ def revoke_file_share(
         action="FILE_SHARE_REVOKED",
         status="success",
         ip_address=_client_ip(request),
-        details=f"Revoked file share for user_id={user_id}",
+        details=f"Revoked file share for user_id={shared_with_user_id}",
     )
 
     return {"message": "File share revoked"}
+
+
+@router.delete("/{file_id}/share")
+def revoke_file_share_by_email(
+    request: Request,
+    file_id: int,
+    payload: RevokeShareRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    file_record = db.query(File).filter(File.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ensure_file_owner_or_admin(file_record, current_user)
+
+    shared_user = db.query(User).filter(User.email == payload.shared_with_email).first()
+    if not shared_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return _revoke_file_share_for_user(
+        request,
+        file_record,
+        shared_user.id,
+        db,
+        current_user,
+    )
+
+
+@router.delete("/{file_id}/share/{user_id}")
+def revoke_file_share(
+    request: Request,
+    file_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    file_record = db.query(File).filter(File.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ensure_file_owner_or_admin(file_record, current_user)
+
+    return _revoke_file_share_for_user(
+        request,
+        file_record,
+        user_id,
+        db,
+        current_user,
+    )
 
 
 @router.post("/{file_id}/share-link", response_model=ShareLinkResponse)

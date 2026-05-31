@@ -249,9 +249,12 @@ async function shareFile(fileId, email) {
   setNotice("success", "Dosya paylasildi");
 }
 
-async function revokeShare(fileId, userId) {
-  await apiFetch(`/files/${fileId}/share/${userId}`, {
+async function revokeShare(fileId, email) {
+  await apiFetch(`/files/${fileId}/share`, {
     method: "DELETE",
+    json: {
+      shared_with_email: email,
+    },
   });
   state.lastShare = null;
   setNotice("success", "Paylasim kaldirildi");
@@ -410,8 +413,8 @@ function renderShareTools() {
       <form class="toolbar" data-form="revoke">
         ${renderFileSelect("fileId")}
         <label>
-          User ID
-          <input name="userId" type="number" min="1" required>
+          Kullanici Email
+          <input name="email" type="email" required placeholder="user2@example.com">
         </label>
         <button class="danger" type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Kaldir</button>
       </form>
@@ -760,7 +763,7 @@ document.addEventListener("submit", (event) => {
 
   if (formType === "revoke") {
     withLoading(async () => {
-      await revokeShare(data.get("fileId"), data.get("userId"));
+      await revokeShare(data.get("fileId"), data.get("email"));
       await refreshWorkspace();
     });
     return;
