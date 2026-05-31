@@ -60,7 +60,7 @@ These should be checked with the real Azure PostgreSQL and Azure Blob configurat
 | --- | --- | --- | --- |
 | Azure Blob | Uploaded blob exists in container | Confirmed in Azure container | PASS |
 | Azure Blob | Blob content is encrypted / unreadable | Confirmed by downloading blob directly | PASS |
-| Azure Blob | Manually modified blob blocks download | Screenshot: frontend/API `409` response | TODO |
+| Azure Blob | Manually modified blob blocks download | Screenshot: frontend/API `409` response | PASS |
 | Rate limiting | Repeated login/upload requests are limited | Confirmed in Week 11 with `429` | PASS |
 | Git hygiene | `.env` is not tracked by GitHub | Confirmed; add screenshot/evidence if needed | PASS |
 | Frontend flow | Register -> Login -> Upload -> Metadata -> Download | Confirmed; screenshots can be added for report | PASS |
@@ -96,5 +96,3 @@ These should be checked with the real Azure PostgreSQL and Azure Blob configurat
 ## Notes
 
 - Automated tests use SQLite and an in-memory fake Blob store for repeatability.
-- Real Azure Blob screenshots should be added before final submission.
-- If `pytest` and `httpx` are installed later, these smoke tests can be expanded into HTTP-level FastAPI tests with `TestClient`.
