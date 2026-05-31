@@ -1,0 +1,5 @@
+Secure Cloud Storage demo document
+
+This is a safe sample file for upload, download, sharing, and integrity verification tests.
+
+No real personal or confidential information is included.

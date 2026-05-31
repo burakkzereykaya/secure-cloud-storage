@@ -25,23 +25,43 @@ const state = {
 };
 
 const tabs = [
-  { id: "files", label: "Dosyalarim" },
-  { id: "shared", label: "Benimle Paylasilan" },
-  { id: "share", label: "Paylas" },
-  { id: "links", label: "Sureli Link" },
+  { id: "files", label: "My Files" },
+  { id: "shared", label: "Shared With Me" },
+  { id: "share", label: "Share" },
+  { id: "links", label: "Expiring Link" },
   { id: "admin", label: "Admin" },
 ];
 
 const fileFields = [
   ["id", "ID"],
   ["owner_id", "Owner ID"],
-  ["original_filename", "Dosya"],
+  ["original_filename", "File"],
   ["blob_path", "Blob Path"],
-  ["size", "Boyut"],
-  ["content_type", "Tip"],
-  ["uploaded_at", "Yuklenme"],
-  ["status", "Durum"],
+  ["size", "Size"],
+  ["content_type", "Type"],
+  ["uploaded_at", "Uploaded"],
+  ["status", "Status"],
 ];
+
+const friendlyErrors = {
+  "Active file share not found": "No active share was found for that user.",
+  "Azure Blob upload failed": "File upload could not reach Azure Blob Storage. Please try again.",
+  "Could not validate credentials": "Your session could not be verified. Please log in again.",
+  "File is already shared with this user": "This file is already shared with that user.",
+  "Invalid email or password": "Invalid email or password.",
+  "Invalid file type": "This file type is not allowed.",
+  "Not Authorized": "You do not have permission to access this file.",
+  "Payload too large": "The selected file is larger than the 10 MB limit.",
+  "Share link expired": "This download link has expired.",
+  "Token expired": "Your session has expired. Please log in again.",
+  "Too many requests": "Too many attempts. Please wait a moment and try again.",
+  "User already registered": "This email is already registered.",
+  "User not found": "No user was found with that email address.",
+};
+
+function friendlyMessage(message) {
+  return friendlyErrors[message] || message;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -101,11 +121,11 @@ function clearSession() {
 }
 
 function getErrorMessage(payload) {
-  if (!payload) return "Istek basarisiz";
-  if (typeof payload === "string") return payload;
-  if (typeof payload.detail === "string") return payload.detail;
+  if (!payload) return "Request failed. Please try again.";
+  if (typeof payload === "string") return friendlyMessage(payload);
+  if (typeof payload.detail === "string") return friendlyMessage(payload.detail);
   if (Array.isArray(payload.detail)) {
-    return payload.detail.map((item) => item.msg || JSON.stringify(item)).join(", ");
+    return payload.detail.map((item) => friendlyMessage(item.msg || JSON.stringify(item))).join(", ");
   }
   return JSON.stringify(payload);
 }
@@ -129,7 +149,12 @@ async function apiFetch(path, options = {}) {
     } catch {
       payload = text;
     }
-    throw new Error(getErrorMessage(payload));
+    const message = getErrorMessage(payload);
+    if (response.status === 401 && state.token) {
+      clearSession();
+      throw new Error("Your session has expired. Please log in again.");
+    }
+    throw new Error(message);
   }
 
   if (options.responseType === "blob") {
@@ -217,7 +242,7 @@ async function uploadFile(file) {
     body: data,
   });
   await refreshWorkspace();
-  setNotice("success", "Dosya yuklendi");
+  setNotice("success", "File uploaded successfully.");
 }
 
 async function downloadFile(fileId, tokenPath = null) {
@@ -235,7 +260,7 @@ async function downloadFile(fileId, tokenPath = null) {
 
 async function loadMetadata(fileId) {
   state.metadata = await apiFetch(`/files/${fileId}`);
-  setNotice("info", "Metadata alindi");
+  setNotice("info", "File metadata loaded.");
 }
 
 async function shareFile(fileId, email) {
@@ -246,7 +271,7 @@ async function shareFile(fileId, email) {
       permission_type: "read",
     },
   });
-  setNotice("success", "Dosya paylasildi");
+  setNotice("success", "File shared successfully.");
 }
 
 async function revokeShare(fileId, email) {
@@ -257,7 +282,7 @@ async function revokeShare(fileId, email) {
     },
   });
   state.lastShare = null;
-  setNotice("success", "Paylasim kaldirildi");
+  setNotice("success", "File share revoked.");
 }
 
 async function createLink(fileId, minutes) {
@@ -267,7 +292,7 @@ async function createLink(fileId, minutes) {
       expires_in_minutes: Number(minutes),
     },
   });
-  setNotice("success", "Sureli link olusturuldu");
+  setNotice("success", "Download link created.");
 }
 
 function render() {
@@ -283,8 +308,8 @@ function render() {
         <div class="topbar-meta">
           <span>${escapeHtml(state.user.email)}</span>
           <span class="role-pill">${escapeHtml(state.user.role)}</span>
-          <button class="secondary" data-action="refresh">Yenile</button>
-          <button class="secondary" data-action="logout">Cikis</button>
+          <button class="secondary" data-action="refresh">Refresh</button>
+          <button class="secondary" data-action="logout">Logout</button>
         </div>
       </header>
       <div class="layout">
@@ -318,7 +343,7 @@ function renderAuth() {
         <div class="brand-block">
           <div>
             <h1>Secure Cloud Storage</h1>
-            <p>Dosya yukleme, paylasim, sureli link ve admin loglari tek arayuzde.</p>
+            <p>Encrypted upload, controlled sharing, expiring links, and audit logs in one secure workspace.</p>
           </div>
           <div class="muted">API: ${escapeHtml(state.apiBase)}</div>
         </div>
@@ -360,17 +385,17 @@ function renderActiveTab() {
 function renderMyFiles() {
   return `
     <section class="section-head">
-      <h2>Dosyalarim</h2>
-      <span class="muted">${state.myFiles.length} kayit</span>
+      <h2>My Files</h2>
+      <span class="muted">${state.myFiles.length} records</span>
     </section>
     <section class="panel">
       <h3>Upload</h3>
       <form class="toolbar" data-form="upload">
         <label>
-          Dosya
+          File
           <input type="file" name="file" required>
         </label>
-        <button type="submit" ${state.loading ? "disabled" : ""}>Yukle</button>
+        <button type="submit" ${state.loading ? "disabled" : ""}>${state.loading ? "Uploading..." : "Upload"}</button>
       </form>
     </section>
     <section class="panel">
@@ -382,8 +407,8 @@ function renderMyFiles() {
 function renderSharedFiles() {
   return `
     <section class="section-head">
-      <h2>Benimle Paylasilan</h2>
-      <span class="muted">${state.sharedFiles.length} kayit</span>
+      <h2>Shared With Me</h2>
+      <span class="muted">${state.sharedFiles.length} records</span>
     </section>
     <section class="panel">
       ${renderFileTable(state.sharedFiles, "shared")}
@@ -394,29 +419,29 @@ function renderSharedFiles() {
 function renderShareTools() {
   return `
     <section class="section-head">
-      <h2>Paylas</h2>
+      <h2>Share</h2>
     </section>
     <section class="panel">
-      <h3>Dosya Paylas</h3>
+      <h3>Share File</h3>
       <form class="toolbar" data-form="share">
         ${renderFileSelect("fileId")}
         <label>
-          Kullanici Email
+          User Email
           <input name="email" type="email" required placeholder="user2@example.com">
         </label>
-        <button type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Paylas</button>
+        <button type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Share</button>
       </form>
       ${state.lastShare ? renderShareResult(state.lastShare) : ""}
     </section>
     <section class="panel">
-      <h3>Paylasimi Kaldir</h3>
+      <h3>Revoke Access</h3>
       <form class="toolbar" data-form="revoke">
         ${renderFileSelect("fileId")}
         <label>
-          Kullanici Email
+          User Email
           <input name="email" type="email" required placeholder="user2@example.com">
         </label>
-        <button class="danger" type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Kaldir</button>
+        <button class="danger" type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Revoke</button>
       </form>
     </section>
   `;
@@ -427,17 +452,17 @@ function renderLinkTools() {
   const directApiUrl = state.lastLink ? `${state.apiBase}/share/${state.lastLink.token}/download` : "";
   return `
     <section class="section-head">
-      <h2>Sureli Link</h2>
+      <h2>Expiring Link</h2>
     </section>
     <section class="panel">
-      <h3>Link Olustur</h3>
+      <h3>Create Link</h3>
       <form class="toolbar" data-form="link">
         ${renderFileSelect("fileId")}
         <label>
-          Dakika
+          Minutes
           <input name="minutes" type="number" min="1" max="10080" value="60" required>
         </label>
-        <button type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Olustur</button>
+        <button type="submit" ${state.loading || !state.myFiles.length ? "disabled" : ""}>Create</button>
       </form>
       ${
         state.lastLink
@@ -455,7 +480,7 @@ function renderLinkTools() {
               </div>
               <div class="copy-row">
                 <input readonly value="${escapeHtml(linkUrl)}">
-                <button class="secondary" data-action="copy" data-copy="${escapeHtml(linkUrl)}">Kopyala</button>
+                <button class="secondary" data-action="copy" data-copy="${escapeHtml(linkUrl)}">Copy</button>
               </div>
               <a href="${escapeHtml(directApiUrl)}" target="_blank" rel="noreferrer">${escapeHtml(directApiUrl)}</a>
             </div>
@@ -470,18 +495,18 @@ function renderAdmin() {
   return `
     <section class="section-head">
       <h2>Admin Panel</h2>
-      <button class="secondary" data-action="refresh-admin">Yenile</button>
+      <button class="secondary" data-action="refresh-admin">Refresh</button>
     </section>
     <section class="panel">
-      <h3>Kullanicilar</h3>
+      <h3>Users</h3>
       ${renderUsersTable(state.adminUsers)}
     </section>
     <section class="panel">
-      <h3>Tum Dosyalar</h3>
+      <h3>All Files</h3>
       ${renderFileTable(state.adminFiles, "admin")}
     </section>
     <section class="panel">
-      <h3>Loglar</h3>
+      <h3>Access Logs</h3>
       ${renderLogsTable(state.adminLogs)}
     </section>
   `;
@@ -490,7 +515,7 @@ function renderAdmin() {
 function renderFileSelect(name) {
   return `
     <label>
-      Dosya
+      File
       <select name="${name}" required ${!state.myFiles.length ? "disabled" : ""}>
         ${state.myFiles
           .map((file) => `
@@ -511,19 +536,19 @@ function renderShareResult(share) {
 }
 
 function renderFileTable(files, mode) {
-  if (!files.length) return `<div class="empty">Kayit yok</div>`;
+  if (!files.length) return `<div class="empty">No records yet</div>`;
   return `
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>ID</th>
-            <th>Dosya</th>
-            <th>Boyut</th>
-            <th>Tip</th>
-            <th>Durum</th>
-            <th>Tarih</th>
-            <th class="nowrap">Aksiyon</th>
+            <th>File</th>
+            <th>Size</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th class="nowrap">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -538,7 +563,7 @@ function renderFileTable(files, mode) {
                 <td>${formatDate(file.uploaded_at)}</td>
                 <td>
                   <div class="actions">
-                    <button class="secondary" data-action="download" data-file-id="${file.id}">Indir</button>
+                    <button class="secondary" data-action="download" data-file-id="${file.id}">Download</button>
                     ${
                       mode !== "shared"
                         ? `<button class="secondary" data-action="metadata" data-file-id="${file.id}">Metadata</button>`
@@ -556,7 +581,7 @@ function renderFileTable(files, mode) {
 }
 
 function renderUsersTable(users) {
-  if (!users.length) return `<div class="empty">Kayit yok</div>`;
+  if (!users.length) return `<div class="empty">No records yet</div>`;
   return `
     <div class="table-wrap">
       <table>
@@ -564,9 +589,9 @@ function renderUsersTable(users) {
           <tr>
             <th>ID</th>
             <th>Email</th>
-            <th>Rol</th>
-            <th>Aktif</th>
-            <th>Tarih</th>
+            <th>Role</th>
+            <th>Active</th>
+            <th>Date</th>
           </tr>
         </thead>
         <tbody>
@@ -576,7 +601,7 @@ function renderUsersTable(users) {
                 <td>${escapeHtml(user.id)}</td>
                 <td>${escapeHtml(user.email)}</td>
                 <td>${escapeHtml(user.role)}</td>
-                <td>${user.is_active ? "Evet" : "Hayir"}</td>
+                <td>${user.is_active ? "Yes" : "No"}</td>
                 <td>${formatDate(user.created_at)}</td>
               </tr>
             `)
@@ -588,7 +613,7 @@ function renderUsersTable(users) {
 }
 
 function renderLogsTable(logs) {
-  if (!logs.length) return `<div class="empty">Kayit yok</div>`;
+  if (!logs.length) return `<div class="empty">No records yet</div>`;
   return `
     <div class="table-wrap">
       <table>
@@ -630,7 +655,7 @@ function renderMetadata(file) {
     <section class="panel">
       <div class="section-head">
         <h3>Metadata</h3>
-        <button class="secondary" data-action="clear-metadata">Kapat</button>
+        <button class="secondary" data-action="clear-metadata">Close</button>
       </div>
       <div class="details-grid">
         ${fileFields
@@ -685,7 +710,7 @@ document.addEventListener("click", (event) => {
   if (action === "refresh") {
     withLoading(async () => {
       await refreshWorkspace();
-      setNotice("success", "Veriler yenilendi");
+      setNotice("success", "Workspace refreshed.");
     });
     return;
   }
@@ -694,14 +719,14 @@ document.addEventListener("click", (event) => {
       state.adminUsers = await apiFetch("/admin/users");
       state.adminFiles = await apiFetch("/admin/files");
       state.adminLogs = await apiFetch("/admin/logs");
-      setNotice("success", "Admin verileri yenilendi");
+      setNotice("success", "Admin data refreshed.");
     });
     return;
   }
   if (action === "download") {
     withLoading(async () => {
       await downloadFile(actionButton.dataset.fileId);
-      setNotice("success", "Download basladi");
+      setNotice("success", "Download started.");
     });
     return;
   }
@@ -716,7 +741,7 @@ document.addEventListener("click", (event) => {
   }
   if (action === "copy") {
     navigator.clipboard.writeText(actionButton.dataset.copy || "");
-    setNotice("success", "Link kopyalandi");
+    setNotice("success", "Link copied.");
   }
 });
 
@@ -738,7 +763,7 @@ document.addEventListener("submit", (event) => {
       } else {
         await login(email, password);
       }
-      setNotice("success", "Oturum acildi");
+      setNotice("success", "Signed in successfully.");
     });
     return;
   }
@@ -746,7 +771,7 @@ document.addEventListener("submit", (event) => {
   if (formType === "upload") {
     const file = data.get("file");
     if (!file || !file.size) {
-      setNotice("error", "Dosya secilmedi");
+      setNotice("error", "Please select a file first.");
       return;
     }
     withLoading(async () => uploadFile(file));
@@ -784,7 +809,7 @@ async function handleShareHash() {
   const token = decodeURIComponent(match[1]);
   await withLoading(async () => {
     await downloadFile(null, `/share/${token}/download`);
-    setNotice("success", "Token download basladi");
+    setNotice("success", "Download started.");
   });
 }
 
