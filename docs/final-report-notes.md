@@ -120,14 +120,3 @@ Live checks completed:
 ```text
 https://secure-cloud-service-f5fdgremc5b9bvfe.polandcentral-01.azurewebsites.net
 ```
-
-## Notes For Screenshots
-
-Before capturing screenshots, hide or crop:
-
-- JWT tokens
-- passwords
-- connection strings
-- storage keys
-- Key Vault secret values
-- database passwords
